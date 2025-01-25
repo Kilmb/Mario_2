@@ -1,0 +1,437 @@
+import pygame
+import sys
+import os
+import time  # Для работы с таймером
+
+# Инициализация Pygame
+pygame.init()
+
+# Настройки окна
+WIDTH, HEIGHT = 800, 600
+FPS = 60
+
+# Цвета
+WHITE = (255, 255, 255)
+BLUE = (30, 144, 255)
+RED = (255, 0, 0)
+ORANGE = (255, 165, 0)
+
+# Создание окна
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Mario-like Game")
+clock = pygame.time.Clock()
+
+# Получаем путь к текущей директории
+current_dir = os.path.dirname(__file__)
+data_dir = os.path.join(current_dir, 'data')
+
+# Загрузка изображений
+platform_img = pygame.image.load(os.path.join(data_dir, 'platform.png')).convert_alpha()
+player_images = {
+    "idle_right": pygame.image.load(os.path.join(data_dir, "w_0.png")).convert_alpha(),
+    "idle_left": pygame.image.load(os.path.join(data_dir, "wl_0.png")).convert_alpha(),
+    "walk_right": [pygame.image.load(os.path.join(data_dir, f"w_{i}.png")).convert_alpha() for i in range(1, 4)],
+    "walk_left": [pygame.image.load(os.path.join(data_dir, f"wl_{i}.png")).convert_alpha() for i in range(1, 4)],
+    "jump_right": pygame.image.load(os.path.join(data_dir, "w_3.png")).convert_alpha(),
+    "jump_left": pygame.image.load(os.path.join(data_dir, "wl_3.png")).convert_alpha(),
+}
+
+bowser_flag_img = pygame.image.load(os.path.join(data_dir, 'bowserflag.jpg')).convert_alpha()
+mario_flag_img = pygame.image.load(os.path.join(data_dir, 'marioflag.png')).convert_alpha()
+wallet_img = pygame.image.load(os.path.join(data_dir, 'wallet.png')).convert_alpha()
+gameover_img = pygame.image.load(os.path.join(data_dir, 'gameover.jpg')).convert_alpha()
+fireflower_img = pygame.image.load(os.path.join(data_dir, 'fireflower.png')).convert()
+
+fireflower_img.set_colorkey((255, 255, 255))
+wallet_img = pygame.transform.scale(wallet_img, (30, 30))
+bowser_flag_img = pygame.transform.scale(bowser_flag_img, (35, 35))
+mario_flag_img = pygame.transform.scale(mario_flag_img, (35, 35))
+gameover_img = pygame.transform.scale(gameover_img, (WIDTH, HEIGHT // 2))
+fireflower_img = pygame.transform.scale(fireflower_img, (32, 32))
+
+# Класс игрока
+class Player(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.direction = "right"
+        self.state = "idle"
+        self.current_frame = 0
+        self.image = player_images["idle_right"]
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.vel_x = 0
+        self.vel_y = 0
+        self.on_ground = False
+        self.jumping = False
+        self.animation_speed = 5
+        self.frame_counter = 0
+        self.has_fireflower = False
+        self.number_fireballs = 0
+
+    def update(self):
+        # Гравитация
+        self.vel_y += 1
+        self.rect.y += self.vel_y
+
+        # Движение по горизонтали
+        self.rect.x += self.vel_x
+
+        # Анимация
+        self.frame_counter += 1
+        if self.frame_counter >= self.animation_speed:
+            self.frame_counter = 0
+            if self.state == "walk":
+                self.current_frame = (self.current_frame + 1) % 3
+                if self.direction == "right":
+                    self.image = player_images["walk_right"][self.current_frame]
+                else:
+                    self.image = player_images["walk_left"][self.current_frame]
+            elif self.state == "idle":
+                if self.direction == "right":
+                    self.image = player_images["idle_right"]
+                else:
+                    self.image = player_images["idle_left"]
+
+        # Прыжок
+        if self.jumping:
+            if self.direction == "right":
+                self.image = player_images["jump_right"]
+            else:
+                self.image = player_images["jump_left"]
+
+        # Ограничение движения по краям экрана
+        if self.rect.left < 0:
+            self.rect.left = 0
+
+
+        # Проверка столкновения с платформами
+        self.on_ground = False
+        for platform in platforms:
+            if self.rect.colliderect(platform.rect):
+                if self.vel_y > 0:  # Падение вниз
+                    self.rect.bottom = platform.rect.top
+                    self.on_ground = True
+                    self.vel_y = 0
+                    self.jumping = False
+                elif self.vel_y < 0:  # Движение вверх
+                    self.rect.top = platform.rect.bottom
+                    self.vel_y = 0
+
+
+
+
+    def jump(self):
+        if self.on_ground:
+            self.vel_y = -15
+            self.jumping = True
+
+# Класс платформы
+class Platform(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = platform_img
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+# Класс фаербола
+class Fireball(pygame.sprite.Sprite):
+    def __init__(self, x, y, direction):
+        super().__init__()
+        self.image = pygame.Surface((19, 19))
+        self.image.fill(RED)
+        pygame.draw.circle(self.image, ORANGE, (9, 9), 9)
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+        self.direction = direction
+        self.speed = 2.5  # Скорость фаербола в два раза меньше скорости игрока
+
+    def update(self):
+        if self.direction == "right":
+            self.rect.x += self.speed
+        else:
+            self.rect.x -= self.speed
+
+        # Проверка столкновений с платформами
+        if pygame.sprite.spritecollideany(self, platforms):
+            self.kill()  # Удаляем фаербол при столкновении с платформой
+
+        # Проверка столкновений с врагами (если есть группа enemies)
+        if pygame.sprite.spritecollideany(self, enemies):
+            self.kill()  # Удаляем фаербол при столкновении с врагом
+
+        # Удаление фаербола, если он выходит за пределы экрана
+        if self.rect.right < 0 or self.rect.left > WIDTH:
+            self.kill()
+
+# Класс цветка
+class Fireflower(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = fireflower_img
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+
+score = 0
+lives = 3  # Начальное количество жизней
+font = pygame.font.Font(None, 36)  # Шрифт для отображения счета
+
+# Обновление класса Coin
+class Coin(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = wallet_img  # Используем спрайт кошелька
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+
+# Класс финиша
+class Flag(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = bowser_flag_img  # Начальный спрайт финиша
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.finish_reached = False
+        self.finish_time = None
+
+    def update(self):
+        if self.finish_reached:
+            if time.time() - self.finish_time >= 0.5:  # Ждем 10 секунд
+                pygame.quit()
+                sys.exit()
+
+    def reach_finish(self):
+        if not self.finish_reached:
+            self.finish_reached = True
+            self.image = mario_flag_img  # Меняем спрайт на marioflag
+            self.finish_time = time.time()
+
+class Camera:
+    def __init__(self, width, height):
+        self.camera = pygame.Rect(0, 0, width, height)
+        self.width = width
+        self.height = height
+
+    def apply(self, entity):
+        return entity.rect.move(self.camera.topleft)
+
+    def update(self, target):
+        x = -target.rect.x + WIDTH // 2
+        y = -target.rect.y + HEIGHT // 2
+
+        # Ограничение камеры краями уровня
+        x = min(0, x)  # Не выходить за левую границу
+        x = max(-(self.width - WIDTH), x)
+        y = min(0, y)  # Не выходить за верхнюю границу
+        y = max(-(self.height - HEIGHT), y)  # Не выходить за нижнюю границу
+
+        self.camera = pygame.Rect(x, y, self.width, self.height)
+
+# Инициализация камеры
+camera = Camera(WIDTH * 3, HEIGHT)
+
+
+# Функция для загрузки уровня
+def load_level(level_map):
+    spawn_x, spawn_y = 0, 0  # Координаты точки спавна
+    for y, row in enumerate(level_map):
+        for x, cell in enumerate(row):
+            if cell == "G":  # Флаг
+                flag = Flag(x * BLOCK_SIZE, y * BLOCK_SIZE)
+                all_sprites.add(flag)
+                flags.add(flag)
+            elif cell == "P":
+                platform = Platform(x * BLOCK_SIZE, y * BLOCK_SIZE)
+                all_sprites.add(platform)
+                platforms.add(platform)
+            elif cell == "C":
+                coin = Coin(x * BLOCK_SIZE + BLOCK_SIZE // 2, y * BLOCK_SIZE + BLOCK_SIZE // 2)
+                all_sprites.add(coin)
+                coins.add(coin)
+            elif cell == "F":  # Цветок
+                fireflower = Fireflower(x * BLOCK_SIZE + BLOCK_SIZE // 2, y * BLOCK_SIZE + BLOCK_SIZE // 2 + 6)
+                all_sprites.add(fireflower)
+                fireflowers.add(fireflower)
+            elif cell == "#":  # Точка спавна игрока
+                spawn_x = x * BLOCK_SIZE
+                spawn_y = y * BLOCK_SIZE
+    return spawn_x, spawn_y
+
+BLOCK_SIZE = 32
+flags = pygame.sprite.Group()
+coins = pygame.sprite.Group()
+enemies = pygame.sprite.Group()
+fireflowers = pygame.sprite.Group()
+fireballs = pygame.sprite.Group()
+
+# Карта уровня
+level_map = [
+    "                          ",
+    "                          ",
+    "                          ",
+    "                          ",
+    "                          ",
+    "                          ",
+    "                          ",
+    "                          ",
+    "                          ",
+    "                          ",
+    "                          ",
+    "                                                 G   ",
+    "                                                 P ",
+    "                                                ",
+    "         C     C            C                P  ",
+    " #     PPP     P          PPP                 ",
+    "                                         P",
+    "        F                                ",
+    "PPPPPPPPPPPPPPPPPPPPPPP         PPPPPP"
+]
+
+# Создание спрайтов
+all_sprites = pygame.sprite.Group()
+platforms = pygame.sprite.Group()
+
+# Загрузка уровня и получение точки спавна
+spawn_x, spawn_y = load_level(level_map)
+
+# Создание игрока
+player = Player(spawn_x, spawn_y)
+all_sprites.add(player)
+
+# Основной цикл игры
+running = True
+game_over = False
+paused = False
+while running:
+    clock.tick(FPS)
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+    if not game_over and not paused:
+        # Управление
+        keys = pygame.key.get_pressed()
+        player.vel_x = 0
+        if keys[pygame.K_LEFT]:
+            player.vel_x = -5
+            player.direction = "left"
+            player.state = "walk"
+        elif keys[pygame.K_RIGHT]:
+            player.vel_x = 5
+            player.direction = "right"
+            player.state = "walk"
+        else:
+            player.state = "idle"
+
+        if keys[pygame.K_UP]:
+            player.jump()
+
+        # Проверка на падение за пределы платформ
+        if player.rect.y > HEIGHT:  # Если персонаж упал за нижнюю границу экрана
+            lives -= 1
+            if lives > 0:
+                player.rect.topleft = (spawn_x, spawn_y)  # Телепортация на точку спавна
+            else:
+                game_over = True
+
+        # Проверка на сбор монет
+        collected_coins = pygame.sprite.spritecollide(player, coins, True)
+        for coin in collected_coins:
+            score += 10  # Увеличение счета
+
+        # Проверка на сбор цветка
+        collected_fireflowers = pygame.sprite.spritecollide(player, fireflowers, True)
+        for fireflower in collected_fireflowers:
+            player.has_fireflower = True
+            player.number_fireballs = player.number_fireballs + 1
+
+        # Проверка на достижение финиша
+        for flag in flags:
+            if player.rect.colliderect(flag.rect):
+                flag.reach_finish()
+
+        # Добавление жизни при нажатии "E" (только если жизней меньше 3)
+        if keys[pygame.K_SPACE] and score >= 100 and lives < 3:
+            lives += 1
+            score -= 100
+
+
+        # Выпуск фаербола при нажатии "E" и наличии цветка
+        if keys[pygame.K_e] and player.has_fireflower and player.number_fireballs >= 1:
+            fireball = Fireball(player.rect.centerx, player.rect.centery, player.direction)
+            all_sprites.add(fireball)
+            fireballs.add(fireball)
+            player.number_fireballs = player.number_fireballs - 1
+
+        # Обновление
+        all_sprites.update()
+
+        camera.update(player)
+
+        # Отрисовка
+        screen.fill(BLUE)
+
+        # Отрисовка всех спрайтов с учетом камеры
+        for sprite in all_sprites:
+            screen.blit(sprite.image, camera.apply(sprite))
+
+        # Отрисовка счета и жизней
+        score_text = font.render(f"Score: {score}", True, WHITE)
+        lives_text = font.render(f"Lives: {lives}", True, WHITE)
+        screen.blit(score_text, (10, 10))
+        screen.blit(lives_text, (WIDTH - 150, 10))
+
+        # Отрисовка надписи "Доступен Fireball"
+        if player.has_fireflower:
+            if player.number_fireballs >= 1:
+                cooldown_text = font.render(f"Доступен Fireball ({player.number_fireballs})", True, WHITE)
+                screen.blit(cooldown_text, (10, 50))
+
+    elif paused:
+        # Отрисовка надписи "ПАУЗА" в центре экрана
+        pause_text = font.render("ПАУЗА", True, WHITE)
+        screen.blit(pause_text, (WIDTH // 2 - pause_text.get_width() // 2, HEIGHT // 2 - pause_text.get_height() // 2))
+
+    else:
+        # Экран поражения
+        screen.blit(gameover_img, (0, 0))
+        restart_text = font.render("Press ENTER to restart", True, WHITE)
+        exit_text = font.render("Press ESCAPE to exit", True, WHITE)
+        screen.blit(restart_text, (WIDTH // 2 - restart_text.get_width() // 2, HEIGHT // 2))
+        screen.blit(exit_text, (WIDTH // 2 - exit_text.get_width() // 2, HEIGHT // 2 + 40))
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_RETURN]:  # Перезапуск игры
+            # Сброс всех параметров
+            lives = 3
+            score = 0
+            game_over = False
+
+            # Очистка всех спрайтов
+            all_sprites.empty()
+            platforms.empty()
+            coins.empty()
+            flags.empty()
+            fireflowers.empty()
+            fireballs.empty()
+
+            # Перезагрузка уровня
+            spawn_x, spawn_y = load_level(level_map)
+
+            # Создание игрока
+            player = Player(spawn_x, spawn_y)
+            all_sprites.add(player)
+
+        elif keys[pygame.K_ESCAPE]:  # Выход из игры
+            running = False
+
+    # Обработка паузы
+    keys = pygame.key.get_pressed()
+    if keys[pygame.K_p]:
+        paused = not paused
+
+    # Обновление экрана
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
