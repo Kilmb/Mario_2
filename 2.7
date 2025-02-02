@@ -1,0 +1,1011 @@
+import pygame
+import sys
+import os
+import time
+import sqlite3
+
+pygame.init()
+
+WIDTH, HEIGHT = 800, 607
+FPS = 60
+
+WHITE = (255, 255, 255)
+BLUE = (30, 144, 255)
+RED = (255, 0, 0)
+ORANGE = (255, 165, 0)
+BROWN = (204, 102, 0)
+BLACK = (0, 0, 0)
+GRAY = (100, 100, 100)
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Mario-like Game")
+clock = pygame.time.Clock()
+
+current_dir = os.path.dirname(__file__)
+data_dir = os.path.join(current_dir, 'data')
+
+fail_music = os.path.join(current_dir, 'sounds', 'fail.mp3')
+
+victory_music = os.path.join(current_dir, 'sounds', 'victory.mp3')
+win_music = pygame.mixer.Sound(os.path.join(current_dir, 'sounds', 'win.mp3'))
+walking_mario_music = os.path.join(os.path.join(current_dir, 'sounds', 'walking_mario.mp3'))
+coin_music1 = pygame.mixer.Sound(os.path.join(current_dir, 'sounds', 'coin_music.mp3'))
+jump_music = pygame.mixer.Sound(os.path.join(current_dir, 'sounds', 'jump.mp3'))
+killing_goomba_music = pygame.mixer.Sound(os.path.join(current_dir, 'sounds', 'killing_goomba.mp3'))
+fireball_music = pygame.mixer.Sound(os.path.join(current_dir, 'sounds', 'fireball_sound.mp3'))
+fire_flower_misic = pygame.mixer.Sound(os.path.join(current_dir, 'sounds', 'fire_flower_claim.mp3'))
+
+platform_img = pygame.image.load(os.path.join(data_dir, 'platform.png')).convert_alpha()
+player_images = {
+    "idle_right": pygame.image.load(os.path.join(data_dir, "w_0.png")).convert_alpha(),
+    "idle_left": pygame.image.load(os.path.join(data_dir, "wl_0.png")).convert_alpha(),
+    "walk_right": [pygame.image.load(os.path.join(data_dir, f"w_{i}.png")).convert_alpha() for i in range(1, 4)],
+    "walk_left": [pygame.image.load(os.path.join(data_dir, f"wl_{i}.png")).convert_alpha() for i in range(1, 4)],
+    "jump_right": pygame.image.load(os.path.join(data_dir, "w_3.png")).convert_alpha(),
+    "jump_left": pygame.image.load(os.path.join(data_dir, "wl_3.png")).convert_alpha(),
+}
+b_font = pygame.image.load(os.path.join(data_dir, 'b_font.jpg')).convert_alpha()
+level1_img = pygame.image.load(os.path.join(data_dir, 'level1_img.png')).convert_alpha()
+level2_img = pygame.image.load(os.path.join(data_dir, 'level2_img.png')).convert_alpha()
+level3_img = pygame.image.load(os.path.join(data_dir, 'level3_img.png')).convert_alpha()
+load_level_img = pygame.image.load(os.path.join(data_dir, 'load_level_img.png')).convert_alpha()
+wallet_img = pygame.image.load(os.path.join(data_dir, 'wallet.png')).convert_alpha()
+gameover_img = pygame.image.load(os.path.join(data_dir, 'gameover.png')).convert_alpha()
+fireflower_img = pygame.image.load(os.path.join(data_dir, 'fireflower.png')).convert()
+black_square_img = pygame.image.load(os.path.join(data_dir, 'black_square.png')).convert_alpha()
+bowser_flag_img = pygame.image.load(os.path.join(data_dir, 'bowserflag.jpg')).convert_alpha()
+mario_flag_img = pygame.image.load(os.path.join(data_dir, 'marioflag.jpg')).convert_alpha()
+youwin_img = pygame.image.load(os.path.join(data_dir, 'you_win.png')).convert_alpha()
+fireflower_img.set_colorkey((255, 255, 255))
+goomba_img = pygame.image.load(os.path.join(data_dir, 'goomba.png')).convert_alpha()
+
+goomba_frames = [
+    goomba_img.subsurface(pygame.Rect(i * 16, 0, 16, 16)) for i in range(3)
+]
+goomba_frames = [pygame.transform.scale(frame, (35, 32)) for frame in goomba_frames]
+wallet_img.set_colorkey((0, 0, 0))
+wallet_img = pygame.transform.scale(wallet_img, (30, 30))
+bowser_flag_img = pygame.transform.scale(bowser_flag_img, (40, 40))
+mario_flag_img = pygame.transform.scale(mario_flag_img, (40, 40))
+gameover_img = pygame.transform.scale(gameover_img, (WIDTH, HEIGHT // 2))
+fireflower_img = pygame.transform.scale(fireflower_img, (40, 50))
+youwin_img = pygame.transform.scale(youwin_img, (WIDTH, HEIGHT // 2))
+bowser_flag_img.set_colorkey((255, 255, 255))
+mario_flag_img.set_colorkey((255, 255, 255))
+b_font = pygame.transform.scale(b_font, (WIDTH, HEIGHT))
+level1_img = pygame.transform.scale(level1_img, (150, 150))
+level2_img = pygame.transform.scale(level2_img, (150, 150))
+level3_img = pygame.transform.scale(level3_img, (150, 150))
+load_level_img = pygame.transform.scale(load_level_img, (100, 100))
+black_square_img = pygame.transform.scale(black_square_img, (100, 100))
+youwin_img.set_colorkey((247, 247, 247))
+
+
+class Player(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.direction = "right"
+        self.state = "idle"
+        self.current_frame = 0
+        self.image = player_images["idle_right"]
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.vel_x = 0
+        self.vel_y = 0
+        self.on_ground = False
+        self.jumping = False
+        self.animation_speed = 5
+        self.frame_counter = 0
+        self.acceleration = 0.5
+        self.deceleration = 0.5
+        self.max_speed = 5
+        self.last_fireball_time = 0
+        self.last_buy_time = 0
+        self.paused_time = 0
+
+    def update(self):
+        self.vel_y += 1
+        self.rect.y += self.vel_y
+
+        self.rect.x += self.vel_x
+
+        # Анимация
+        self.frame_counter += 1
+        if self.frame_counter >= self.animation_speed:
+            self.frame_counter = 0
+            if self.state == "walk":
+                self.current_frame = (self.current_frame + 1) % 3
+                if self.direction == "right":
+                    self.image = player_images["walk_right"][self.current_frame]
+                else:
+                    self.image = player_images["walk_left"][self.current_frame]
+
+            if not pygame.mixer.music.get_busy():
+                pygame.mixer.music.load(walking_mario_music)
+                pygame.mixer.music.play(-1)  # -1 для бесконечного повтора
+            elif self.state == "idle":
+                if self.direction == "right":
+                    self.image = player_images["idle_right"]
+                else:
+                    self.image = player_images["idle_left"]
+
+                # Остановить музыку, если игрок стоит
+                pygame.mixer.music.stop()
+            if self.jumping:
+                if self.direction == "right":
+                    self.image = player_images["jump_right"]
+                else:
+                    self.image = player_images["jump_left"]
+
+                # Остановить музыку, если игрок прыгает
+                pygame.mixer.music.stop()
+
+        # Ограничение движения по краям экрана
+        if self.rect.left < 0:
+            self.rect.left = 0
+
+        # Проверка столкновения с платформами
+        self.on_ground = False
+        for platform in platforms:
+            if self.rect.colliderect(platform.rect):
+                if self.vel_y > 0:
+                    self.rect.bottom = platform.rect.top
+                    self.on_ground = True
+                    self.vel_y = 0
+                    self.jumping = False
+                elif self.vel_y < 0:
+                    self.rect.top = platform.rect.bottom
+                    self.vel_y = 0
+
+    def move_left(self):
+        can_move = True
+        for platform in platforms:
+            if (self.rect.left - platform.rect.right) <= 5 and platform.rect.right < self.rect.left:
+                if platform.rect.top < self.rect.bottom and platform.rect.bottom > self.rect.top:
+                    can_move = False
+                    break
+
+        if can_move:
+            if self.vel_x > -self.max_speed:
+                self.vel_x -= self.acceleration
+            self.direction = "left"
+            self.state = "walk"
+        else:
+            self.vel_x = 0
+
+    def move_right(self):
+        can_move = True
+        for platform in platforms:
+            if (platform.rect.left - self.rect.right) <= 5 and platform.rect.left > self.rect.right:
+                if platform.rect.top < self.rect.bottom and platform.rect.bottom > self.rect.top:
+                    can_move = False
+                    break
+
+        if can_move:
+            if self.vel_x < self.max_speed:
+                self.vel_x += self.acceleration
+            self.direction = "right"
+            self.state = "walk"
+        else:
+            self.vel_x = 0
+
+    def stop(self):
+        if self.vel_x > 0:
+            self.vel_x -= self.deceleration
+            if self.vel_x < 0:
+                self.vel_x = 0
+        elif self.vel_x < 0:
+            self.vel_x += self.deceleration
+            if self.vel_x > 0:
+                self.vel_x = 0
+        self.state = "idle"
+
+    def jump(self):
+        if self.on_ground:
+            self.vel_y = -15
+            self.jumping = True
+            jump_music.play()
+
+
+class Goomba(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.frames = goomba_frames
+        self.current_frame = 0
+        self.image = self.frames[self.current_frame]
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.vel_x = 1
+        self.vel_y = 0
+        self.direction = 1
+        self.is_dead = False
+        self.death_timer = 0
+        self.animation_speed = 10
+        self.frame_counter = 0
+        self.initial_x = x
+        self.initial_y = y
+        self.on_ground = False
+
+    def reset_position(self):
+        self.rect.topleft = (self.initial_x, self.initial_y)
+        self.is_dead = False
+        self.direction = 1
+        self.vel_x = 1
+        self.vel_y = 0
+        self.on_ground = False
+
+    def update(self):
+        if not self.is_dead:
+            # Проверка, есть ли платформа в пределах 15 пикселей под Goomba
+            self.on_ground = False
+            check_rect = pygame.Rect(self.rect.left, self.rect.bottom, self.rect.width, 15)
+            for platform in platforms:
+                if check_rect.colliderect(platform.rect):
+                    # Если платформа найдена, выравниваем Goomba по верхнему краю платформы
+                    self.rect.bottom = platform.rect.top
+                    self.on_ground = True
+                    self.vel_y = 0
+                    break
+
+            # Гравитация
+            if not self.on_ground:
+                self.vel_y += 1
+            else:
+                self.vel_y = 0
+            self.rect.y += self.vel_y
+            self.rect.x += self.vel_x * self.direction
+
+            if self.rect.left <= camera.level_left + 10:
+                self.rect.left = camera.level_left + 10
+                self.direction = 1
+            elif self.rect.right >= camera.level_right - 10:
+                self.rect.right = camera.level_right - 10
+                self.direction = -1
+
+            # Анимация ходьбы
+            self.frame_counter += 1
+            if self.frame_counter >= self.animation_speed:
+                self.frame_counter = 0
+                self.current_frame = (self.current_frame + 1) % 2
+                # Устанавливаем спрайт в зависимости от направления
+                if self.direction == -1:
+                    self.image = self.frames[self.current_frame]
+                else:
+                    self.image = pygame.transform.flip(self.frames[self.current_frame], True, False)
+
+            # Проверка столкновений с платформами по горизонтали
+            for platform in platforms:
+                if self.rect.colliderect(platform.rect):
+                    if self.direction > 0:
+                        if self.rect.right > platform.rect.left > self.rect.left:
+                            self.rect.right = platform.rect.left
+                            self.direction = -1
+                    elif self.direction < 0:
+                        if self.rect.left < platform.rect.right < self.rect.right:
+                            self.rect.left = platform.rect.right
+                            self.direction = 1
+
+            # Проверка столкновения с игроком
+            if self.rect.colliderect(player.rect):
+                if player.vel_y > 0 and player.rect.bottom < self.rect.bottom:
+                    self.is_dead = True
+                    self.image = self.frames[2]
+                    self.death_timer = pygame.time.get_ticks()
+                    killing_goomba_music.play()  # Проиграть звук убийства Гумбы
+                    player.vel_y = -10
+                    game_state.score += 20
+                else:
+                    game_state.lives -= 1
+                    if game_state.lives <= 0:
+                        game_state.game_over = True
+                    else:
+                        player.rect.topleft = (spawn_x, spawn_y)
+                        for goomba in enemies:
+                            if isinstance(goomba, Goomba):
+                                goomba.reset_position()
+        else:
+            if pygame.time.get_ticks() - self.death_timer > 500:
+                self.kill()
+
+
+class Platform(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = platform_img
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+
+class Fireball(pygame.sprite.Sprite):
+    def __init__(self, x, y, direction):
+        super().__init__()
+        self.image = pygame.Surface((19, 19))
+        self.image.fill(RED)
+        pygame.draw.circle(self.image, ORANGE, (9, 9), 9)
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+        self.direction = direction
+        self.speed = 2.5
+
+    def update(self):
+        if self.direction == "right":
+            self.rect.x += self.speed
+        else:
+            self.rect.x -= self.speed
+
+        # Проверка столкновений с платформами
+        if pygame.sprite.spritecollideany(self, platforms):
+            self.kill()
+
+        # Проверка столкновений с врагами (Goomba)
+        hit_enemies = pygame.sprite.spritecollide(self, enemies, False)
+        for enemy in hit_enemies:
+            if isinstance(enemy, Goomba):
+                enemy.is_dead = True
+                enemy.image = enemy.frames[2]
+                enemy.death_timer = pygame.time.get_ticks()
+                self.kill()
+                game_state.score += 20
+                killing_goomba_music.play()
+
+        # Удаление фаербола, если он выходит за пределы уровня
+        if self.rect.right < camera.level_left or self.rect.left > camera.level_right:
+            self.kill()
+
+
+class Fireflower(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = fireflower_img
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+
+
+score = 0
+lives = 3
+font = pygame.font.Font(None, 36)
+
+
+class Coin(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = wallet_img
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+
+
+victory_music_played = False
+
+
+class Flag(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = bowser_flag_img
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.finish_reached = False
+        self.finish_time = None
+
+    def update(self):
+        if self.finish_reached:
+            if time.time() - self.finish_time >= 0.5:
+                pygame.quit()
+                sys.exit()
+
+    def reach_finish(self):
+        if not self.finish_reached:
+            self.finish_reached = True
+            self.image = mario_flag_img
+            self.finish_time = time.time()
+
+
+class Camera:
+    def __init__(self, width, height):
+        self.camera = pygame.Rect(0, 0, width, height)
+        self.width = width
+        self.height = height
+        self.level_left = 0
+        self.level_right = width
+
+    def apply(self, entity):
+        return entity.rect.move(self.camera.topleft)
+
+    def update(self, target):
+        x = -target.rect.x + WIDTH // 2
+        y = -target.rect.y + HEIGHT // 2
+
+        # Ограничение камеры краями уровня
+        x = min(0, x)
+        x = max(-(self.level_right - WIDTH), x)
+        y = min(0, y)
+        y = max(-(self.height - HEIGHT), y)
+
+        self.camera = pygame.Rect(x, y, self.width, self.height)
+
+
+camera = Camera(WIDTH * 3, HEIGHT)
+
+
+def draw_text(text, font, color, surface, x, y):
+    textobj = font.render(text, 1, color)
+    textrect = textobj.get_rect()
+    textrect.topleft = (x, y)
+    surface.blit(textobj, textrect)
+
+
+def load_level(filename):
+    global all_sprites, platforms, coins, enemies, fireflowers, fireballs, flags, player
+
+    all_sprites.empty()
+    platforms.empty()
+    coins.empty()
+    enemies.empty()
+    fireflowers.empty()
+    fireballs.empty()
+    flags.empty()
+
+    level_left = float('inf')
+    level_right = -float('inf')
+
+    with open(filename, 'r') as file:
+        level_map = file.readlines()
+    level_map = [line.strip() for line in level_map]
+
+    for y, row in enumerate(level_map):
+        for x, cell in enumerate(row):
+            if cell == "S":
+                flag = Flag(x * BLOCK_SIZE, y * BLOCK_SIZE - 5)
+                all_sprites.add(flag)
+                flags.add(flag)
+            elif cell == "P":
+                platform = Platform(x * BLOCK_SIZE, y * BLOCK_SIZE)
+                all_sprites.add(platform)
+                platforms.add(platform)
+                level_left = min(level_left, x * BLOCK_SIZE)
+                level_right = max(level_right, x * BLOCK_SIZE + platform.rect.width)
+            elif cell == "C":
+                coin = Coin(x * BLOCK_SIZE + BLOCK_SIZE // 2, y * BLOCK_SIZE + BLOCK_SIZE // 2)
+                all_sprites.add(coin)
+                coins.add(coin)
+            elif cell == "F":
+                fireflower = Fireflower(x * BLOCK_SIZE + BLOCK_SIZE // 2, y * BLOCK_SIZE + BLOCK_SIZE // 2 + 3)
+                all_sprites.add(fireflower)
+                fireflowers.add(fireflower)
+            elif cell == "#":
+                spawn_x = x * BLOCK_SIZE
+                spawn_y = y * BLOCK_SIZE
+            elif cell == "G":
+                goomba = Goomba(x * BLOCK_SIZE, y * BLOCK_SIZE)
+                all_sprites.add(goomba)
+                enemies.add(goomba)
+
+    camera.level_left = level_left
+    camera.level_right = level_right
+
+    player = Player(spawn_x, spawn_y)
+    all_sprites.add(player)
+
+    return spawn_x, spawn_y
+
+
+current_level = "level1"
+BLOCK_SIZE = 32
+flags = pygame.sprite.Group()
+coins = pygame.sprite.Group()
+enemies = pygame.sprite.Group()
+fireflowers = pygame.sprite.Group()
+fireballs = pygame.sprite.Group()
+
+all_sprites = pygame.sprite.Group()
+platforms = pygame.sprite.Group()
+spawn_x, spawn_y = load_level(os.path.join(current_dir, 'levels', current_level))
+
+player = Player(spawn_x, spawn_y)
+all_sprites.add(player)
+
+
+class GameState:
+    def __init__(self):
+        self.score = 0
+        self.lives = 3
+        self.current_level = "level1"
+        self.game_over = False
+        self.paused = False
+        self.win = False
+        self.victory_music_played = False
+        self.music_played = False
+        self.gameover_y = -HEIGHT // 2
+        self.win_sprite_y = -HEIGHT // 2
+        self.message_text = ""
+        self.message_time = 0
+        self.win_time = 0
+        self.win_sprite_speed = 3
+        self.gameover_speed = 3
+        self.number_fireballs = 0
+
+
+game_state = GameState()
+
+
+def connect_db():
+    conn = sqlite3.connect(os.path.join(current_dir, 'settings.db'))
+    return conn
+
+
+def update_settings(level2=None, level3=None, load_levels=None, all_score=None, fireball=None):
+    conn = connect_db()
+    cursor = conn.cursor()
+
+    updates = []
+    if level2 is not None:
+        updates.append(f"level2 = '{level2}'")
+    if level3 is not None:
+        updates.append(f"level3 = '{level3}'")
+    if load_levels is not None:
+        updates.append(f"load_levels = '{load_levels}'")
+    if all_score is not None:
+        updates.append(f"all_score = {all_score}")
+    if fireball is not None:
+        updates.append(f"fireball = {fireball}")
+
+    if updates:
+        query = f"UPDATE sets SET {', '.join(updates)}"
+        cursor.execute(query)
+        conn.commit()
+
+    conn.close()
+
+
+def get_settings():
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT level2, level3, load_levels, all_score, fireball FROM sets")
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+
+def main_menu():
+    while True:
+        screen.blit(b_font, (0, 0))
+        main_menu_b = pygame.Rect(205, 33, 390, 80)
+        main_menu_f = pygame.Rect(210, 38, 380, 70)
+        pygame.draw.rect(screen, BLACK, main_menu_b)
+        pygame.draw.rect(screen, BLUE, main_menu_f)
+        draw_text('Главное меню', pygame.font.Font(None, 74), WHITE, screen, 220, 50)
+
+        mx, my = pygame.mouse.get_pos()
+
+        button_1 = pygame.Rect(280, 175, 240, 50)  
+        button_2 = pygame.Rect(280, 270, 240, 50)  
+        button_3 = pygame.Rect(280, 365, 240, 50)  
+        button_4 = pygame.Rect(280, 460, 240, 50)  
+
+        button_b_1 = pygame.Rect(275, 170, 250, 60)
+        button_b_2 = pygame.Rect(275, 265, 250, 60)
+        button_b_3 = pygame.Rect(275, 360, 250, 60)
+        button_b_4 = pygame.Rect(275, 455, 250, 60)
+
+        pygame.draw.rect(screen, BLACK, button_b_1)
+        pygame.draw.rect(screen, BLACK, button_b_2)
+        pygame.draw.rect(screen, BLACK, button_b_3)
+        pygame.draw.rect(screen, BLACK, button_b_4)
+
+        pygame.draw.rect(screen, BROWN, button_1)
+        pygame.draw.rect(screen, BROWN, button_2)
+        pygame.draw.rect(screen, BROWN, button_3)
+        pygame.draw.rect(screen, BROWN, button_4)
+
+        draw_text('Играть', pygame.font.Font(None, 50), WHITE, screen, 345, 185)
+        draw_text('Информация', pygame.font.Font(None, 50), WHITE, screen, 286, 280)
+        draw_text('Сбросить всё', pygame.font.Font(None, 50), WHITE, screen, 285, 375)
+        draw_text('Выйти', pygame.font.Font(None, 50), WHITE, screen, 350, 470)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if button_1.collidepoint((mx, my)):
+                    level_select()
+                if button_2.collidepoint((mx, my)):
+                    os.system('notepad.exe ' + os.path.join(data_dir, 'info.txt'))
+                if button_3.collidepoint((mx, my)):
+                    reset_all()
+                if button_4.collidepoint((mx, my)):
+                    update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                    pygame.quit()
+                    sys.exit()
+
+        pygame.display.update()
+        clock.tick(FPS)
+
+
+def reset_all():
+    update_settings(
+        level2='lock',
+        level3='lock',
+        load_levels='lock',
+        all_score=0,
+        fireball=0
+    )
+
+    game_state.score = 0
+    game_state.lives = 3
+    game_state.current_level = "level1"
+
+    all_sprites.empty()
+    platforms.empty()
+    coins.empty()
+    enemies.empty()
+    fireflowers.empty()
+    fireballs.empty()
+    flags.empty()
+
+    print("Все данные успешно сброшены!")
+
+
+def level_select():
+    sets = get_settings()  
+    level2_status, level3_status, load_levels_status, _, _ = sets
+    while True:
+        screen.blit(b_font, (0, 0))
+        select_level = pygame.Rect(155, 35, 500, 80)
+        pygame.draw.rect(screen, BLACK, select_level)
+        select_level = pygame.Rect(160, 40, 490, 70)
+        pygame.draw.rect(screen, BLUE, select_level)
+        draw_text('Выберите уровень', pygame.font.Font(None, 74), WHITE, screen, 170, 50)
+        mx, my = pygame.mouse.get_pos()
+
+        level1_rect = pygame.Rect(100, 150, 150, 150)
+        level2_rect = pygame.Rect(325, 150, 150, 150)
+        level3_rect = pygame.Rect(550, 150, 150, 150)
+        load_level_rect = pygame.Rect(350, 315, 91, 91)
+        back_button = pygame.Rect(130, 182, 90, 90)
+        back_button2 = pygame.Rect(357, 180, 90, 90)
+        back_button3 = pygame.Rect(580, 182, 90, 90)
+        back_button4 = pygame.Rect(355, 320, 91, 91)
+        back_button5 = pygame.Rect(305, 467, 190, 50)
+        back_button6 = pygame.Rect(300, 462, 200, 60)
+
+        pygame.draw.rect(screen, BLACK, back_button6)
+        pygame.draw.rect(screen, BROWN, back_button5)
+        draw_text('Вернуться', pygame.font.Font(None, 50), WHITE, screen, 310, 475)
+
+        # Рисуем иконки уровней
+        if level2_status == 'unlock':
+            pygame.draw.rect(screen, BROWN, back_button2)
+
+        if level3_status == 'unlock':
+            pygame.draw.rect(screen, BROWN, back_button3)
+
+        if load_levels_status == 'unlock':
+            pygame.draw.rect(screen, BROWN, back_button4)
+
+        pygame.draw.rect(screen, BROWN, back_button)
+
+        screen.blit(level1_img, (100, 150))
+        screen.blit(level2_img, (325, 150))
+        screen.blit(level3_img, (550, 150))
+        screen.blit(black_square_img, (350, 315))
+        screen.blit(load_level_img, (350, 315))
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if level1_rect.collidepoint((mx, my)):
+                    game_state.current_level = "level1"
+                    reset_game_state()
+                    load_level(os.path.join(current_dir, 'levels', game_state.current_level))
+                    game_loop()
+                if level2_rect.collidepoint((mx, my)) and level2_status == 'unlock':
+                    game_state.current_level = "level2"
+                    reset_game_state()
+                    load_level(os.path.join(current_dir, 'levels', game_state.current_level))
+                    game_loop()
+                if level3_rect.collidepoint((mx, my)) and level3_status == 'unlock':
+                    game_state.current_level = "level3"
+                    reset_game_state()
+                    load_level(os.path.join(current_dir, 'levels', game_state.current_level))
+                    game_loop()
+                if load_level_rect.collidepoint((mx, my)) and load_levels_status == 'unlock':
+                    level_name = input("Введите название файла уровня тут: ")
+                    if not level_name:
+                        print("Файл не найден")
+                    elif os.path.exists(os.path.join(current_dir, 'levels', level_name)):
+                        game_state.current_level = level_name
+                        reset_game_state()
+                        load_level(os.path.join(current_dir, 'levels', game_state.current_level))
+                        game_loop()
+                    else:
+                        print("Файл не найден")
+                if back_button5.collidepoint((mx, my)):
+                    main_menu()
+
+        pygame.display.update()
+        clock.tick(FPS)
+
+
+def reset_game_state():
+    global all_sprites, platforms, coins, enemies, fireballs, flags, player
+    all_sprites.empty()
+    platforms.empty()
+    coins.empty()
+    enemies.empty()
+    fireflowers.empty()
+    fireballs.empty()
+    flags.empty()
+
+    # Загружаем сохраненные значения из базы данных
+    settings = get_settings()
+    game_state.score = settings[3] if settings[3] is not None else 0
+    game_state.number_fireballs = settings[4] if settings[4] is not None else 0  
+    game_state.lives = 3
+    game_state.game_over = False
+    game_state.win = False
+    game_state.victory_music_played = False
+    game_state.music_played = False
+    game_state.gameover_y = -HEIGHT // 2
+    game_state.win_sprite_y = -HEIGHT // 2
+    game_state.paused = False
+
+    pygame.mixer.music.stop()
+    pygame.mixer.stop()
+
+
+def game_loop():
+    global player
+    running = True
+    while running:
+        clock.tick(FPS)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)  
+                pygame.mixer.music.stop()
+                running = False
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_ESCAPE]:
+            update_settings(all_score=game_state.score, fireball=game_state.number_fireballs) 
+            reset_game_state()
+            pygame.mixer.music.stop()
+            level_select()
+            return
+
+        if not game_state.game_over and not game_state.paused and not game_state.win:
+            if keys[pygame.K_LEFT]:
+                player.move_left()
+            elif keys[pygame.K_RIGHT]:
+                player.move_right()
+            else:
+                player.stop()
+            if keys[pygame.K_UP]:
+                player.jump()
+
+            # Проверка на падение за пределы платформ
+            if player.rect.y > HEIGHT:
+                game_state.lives -= 1
+                if game_state.lives > 0:
+                    player.rect.topleft = (spawn_x, spawn_y)
+                    for goomba in enemies:
+                        if isinstance(goomba, Goomba):
+                            goomba.reset_position()
+                else:
+                    game_state.game_over = True
+
+            # Проверка на сбор монет
+            collected_coins = pygame.sprite.spritecollide(player, coins, True)
+            for _ in collected_coins:
+                game_state.score += 10
+                coin_music1.play()
+
+            # Проверка на сбор цветка
+            collected_fireflowers = pygame.sprite.spritecollide(player, fireflowers, True)
+            for _ in collected_fireflowers:
+                game_state.number_fireballs += 1
+                fire_flower_misic.play()
+
+            for flag in flags:
+                if player.rect.colliderect(flag.rect):
+                    flag.reach_finish()
+                    game_state.win = True
+                    game_state.win_time = time.time()
+
+            # Добавление жизни при нажатии "SPACE" (только если жизней меньше 3)
+            if keys[pygame.K_SPACE]:
+                current_time3 = pygame.time.get_ticks()
+                if current_time3 - player.last_buy_time >= 200:
+                    if game_state.lives >= 3:
+                        game_state.message_text = "Достигнут лимит жизней"
+                        game_state.message_time = pygame.time.get_ticks()
+                    elif game_state.score >= 100:
+                        game_state.lives += 1
+                        game_state.score -= 100
+                    else:
+                        game_state.message_text = f"Вам не хватает {100 - game_state.score} очков"
+                        game_state.message_time = pygame.time.get_ticks()
+                    player.last_buy_time = current_time3
+
+            # Пускание фаербола
+            if keys[pygame.K_e] and game_state.number_fireballs >= 1:
+                current_time = pygame.time.get_ticks()
+                if current_time - player.last_fireball_time >= 200:
+                    fireball = Fireball(player.rect.centerx, player.rect.centery, player.direction)
+                    all_sprites.add(fireball)
+                    fireballs.add(fireball)
+                    game_state.number_fireballs -= 1
+                    player.last_fireball_time = current_time
+                    fireball_music.play()
+
+            # Покупка фаербола за 50 очков
+            if keys[pygame.K_r]:
+                current_time2 = pygame.time.get_ticks()
+                if current_time2 - player.last_buy_time >= 200:
+                    if game_state.score >= 50:
+                        game_state.score -= 50
+                        game_state.number_fireballs += 1
+                        player.last_buy_time = current_time2
+                    else:
+                        game_state.message_text = f"Вам не хватает {50 - game_state.score} очков"
+                        game_state.message_time = pygame.time.get_ticks()
+
+            all_sprites.update()
+
+            camera.update(player)
+
+            screen.fill(BLUE)
+
+            for sprite in all_sprites:
+                screen.blit(sprite.image, camera.apply(sprite))
+
+            # Отрисовка счета и жизней
+            score_text = font.render(f"Очки: {game_state.score}", True, WHITE)
+            lives_text = font.render(f"Жизни: {game_state.lives}", True, WHITE)
+            screen.blit(score_text, (10, 10))
+            screen.blit(lives_text, (WIDTH - 150, 10))
+
+            if game_state.number_fireballs >= 1:
+                cooldown_text = font.render(f"Доступен Fireball ({game_state.number_fireballs})", True, WHITE)
+                screen.blit(cooldown_text, (10, 50))
+
+            # Отображение сообщения
+            current_time = pygame.time.get_ticks()
+            if game_state.message_time != 0 and current_time - game_state.message_time < 3000:
+                message_surface = font.render(game_state.message_text, True, RED)
+                screen.blit(message_surface,
+                            (WIDTH // 2 - message_surface.get_width() // 2,
+                             HEIGHT // 2 - message_surface.get_height() // 2))
+            else:
+                game_state.message_time = 0
+
+        elif game_state.paused:
+            pause_text = font.render("ПАУЗА", True, WHITE)
+            screen.blit(pause_text,
+                        (WIDTH // 2 - pause_text.get_width() // 2, HEIGHT // 2 - pause_text.get_height() // 2))
+            exit_text = font.render("Нажмите ESC чтобы выйти", True, WHITE)
+            screen.blit(exit_text, (WIDTH // 2 - exit_text.get_width() // 2, HEIGHT // 2 + 80))
+            restart_text = font.render("Нажмите ENTER чтобы перезапустить", True, WHITE)
+            screen.blit(restart_text, (WIDTH // 2 - restart_text.get_width() // 2, HEIGHT // 2 + 40))
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_ESCAPE]:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                reset_game_state()
+                level_select()
+                return
+            if keys[pygame.K_RETURN]:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                reset_game_state()
+                load_level(os.path.join(current_dir, "levels", game_state.current_level))
+                if player in all_sprites:
+                    all_sprites.remove(player)
+                player = Player(spawn_x, spawn_y)
+                all_sprites.add(player)
+                game_state.paused = False
+
+        elif game_state.win:
+            if game_state.win_sprite_y < HEIGHT // 15:
+                pygame.draw.rect(screen, BLUE,
+                                 (0, game_state.win_sprite_y - game_state.win_sprite_speed,
+                                  WIDTH, youwin_img.get_height()))
+                game_state.win_sprite_y += game_state.win_sprite_speed
+            if not game_state.victory_music_played:
+                pygame.mixer.music.load(victory_music)
+                pygame.mixer.music.play(loops=0)
+                game_state.victory_music_played = True
+                win_music.play()
+
+            screen.blit(youwin_img, (0, game_state.win_sprite_y))
+            restart_text = font.render("Нажмите ENTER для перезагрузки", True, WHITE)
+            exit_text = font.render("Нажмитие ESCAPE чтобы выйти", True, WHITE)
+            screen.blit(restart_text, (WIDTH // 2 - restart_text.get_width() // 2, HEIGHT - 180))
+            screen.blit(exit_text, (WIDTH // 2 - exit_text.get_width() // 2, HEIGHT - 130))
+            if game_state.current_level == "level1":
+                update_settings(level2='unlock')
+            elif game_state.current_level == "level2":
+                update_settings(level3='unlock')
+            elif game_state.current_level == "level3":
+                update_settings(load_levels='unlock')
+
+            if game_state.current_level != "level3":
+                next_level_text = font.render("Нажмите SHIFT для перехода на следующий уровень", True, WHITE)
+                screen.blit(next_level_text, (WIDTH // 2 - next_level_text.get_width() // 2, HEIGHT - 80))
+            keys = pygame.key.get_pressed()
+
+            if keys[pygame.K_RETURN]:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                reset_game_state()
+                load_level(os.path.join(current_dir, "levels", game_state.current_level))
+                if player in all_sprites:
+                    all_sprites.remove(player)
+                player = Player(spawn_x, spawn_y)
+                all_sprites.add(player)
+            elif keys[pygame.K_ESCAPE]:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                reset_game_state()
+                level_select()
+                return
+
+            elif (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and game_state.current_level != "level3":
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                if game_state.current_level == "level1":
+                    game_state.current_level = "level2"
+                elif game_state.current_level == "level2":
+                    game_state.current_level = "level3"
+                reset_game_state()
+                load_level(os.path.join(current_dir, "levels", game_state.current_level))  
+                if player in all_sprites:
+                    all_sprites.remove(player)
+                player = Player(spawn_x, spawn_y)
+                all_sprites.add(player)
+
+        else:
+            if game_state.gameover_y < HEIGHT // 15:
+                pygame.draw.rect(screen, BLUE,
+                                 (0, game_state.gameover_y - game_state.gameover_speed,
+                                  WIDTH, gameover_img.get_height()))
+                game_state.gameover_y += game_state.gameover_speed
+            if not game_state.music_played:
+                pygame.mixer.music.load(fail_music)
+                pygame.mixer.music.play(loops=0)
+                game_state.music_played = True
+            screen.blit(gameover_img, (0, game_state.gameover_y))
+            restart_text = font.render("Нажмите ENTER для перезагрузки", True, WHITE)
+            exit_text = font.render("Нажмитие ESCAPE чтобы выйти", True, WHITE)
+            screen.blit(restart_text, (WIDTH // 2 - restart_text.get_width() // 2, HEIGHT - 180))
+            screen.blit(exit_text, (WIDTH // 2 - exit_text.get_width() // 2, HEIGHT - 130))
+
+            keys = pygame.key.get_pressed()
+
+            if keys[pygame.K_RETURN]:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                # Перезапуск уровня
+                reset_game_state()
+                load_level(os.path.join(current_dir, "levels", game_state.current_level))
+                if player in all_sprites:
+                    all_sprites.remove(player)
+                player = Player(spawn_x, spawn_y)
+                all_sprites.add(player)
+            elif keys[pygame.K_ESCAPE]:
+                update_settings(all_score=game_state.score, fireball=game_state.number_fireballs)
+                reset_game_state()
+                level_select()
+                return
+
+        keys = pygame.key.get_pressed()
+        current_time3 = pygame.time.get_ticks()
+        if current_time3 - player.paused_time >= 100:
+            if keys[pygame.K_p]:
+                game_state.paused = not game_state.paused
+            player.paused_time = current_time3
+
+        pygame.display.flip()
+
+    pygame.quit()
+    sys.exit()
+
+
+main_menu()
