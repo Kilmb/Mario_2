@@ -9,11 +9,11 @@
 .              C
 .
 .                   F           PPP
-.         PPP      PPP    C          C                              P
-.                         P                      C                  P
-.G   C                                PPP        P                 SP
-.PPPPPP                                                            PP
-.                             C    P        PPP      P G G G G G G PP
-.                             P                      PPPPPPPPPPPPPPPP
-#      F GP        C    PP
+.         PPP      PPP    C          C                              
+.                         P                      C                   P
+.G   C                                PPP        P                 S P
+.PPPPPP                                                            PPP
+.                             C    P        PPP      P G G G G G G PPP
+.                             P                      PPPPPPPPPPPPPPPPP
+#        GP        C    PP
 PPPPPPPPPPP        P
